@@ -27,6 +27,9 @@ frontend/out/
 .DS_Store
 Thumbs.db
 
+# Claude 内部文件
+.claude/
+
 # 临时文件
 *.log
 *.tmp
