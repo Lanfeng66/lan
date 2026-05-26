@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python *)",
+      "Bash(.venv/Scripts/python -c ' *)",
+      "Bash(npm run *)",
+      "Bash(node -e \"const pkg=require\\('./package.json'\\); console.log\\('Next.js version:', pkg.dependencies.next\\); console.log\\('React version:', pkg.dependencies.react\\);\")"
+    ]
+  }
+}

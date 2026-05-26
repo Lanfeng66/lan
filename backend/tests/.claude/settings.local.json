@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python scripts/index_documents.py)",
+      "Bash(pip install *)",
+      "Bash(python tests/test_rag.py)"
+    ]
+  }
+}

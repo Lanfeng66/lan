@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip show *)",
+      "Bash(python -c \"from ragas import EvaluationResult; print\\(dir\\(EvaluationResult\\)\\)\")",
+      "Bash(python *)"
+    ]
+  }
+}
