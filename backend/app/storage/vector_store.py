@@ -1,34 +1,66 @@
 """Chroma 向量数据库操作。"""
 import os
+import time
 from typing import List, Optional
 from langchain_core.documents import Document
 from langchain_community.vectorstores import Chroma
-from app.embedding.embeddings import get_embedding_model
+from app.embedding.embeddings import get_embedding_model, embed_batch
+
 
 class VectorStoreManager:
     """管理 Chroma 向量存储：索引、检索、删除。"""
+
     def __init__(self, persist_dir: str):
-        #存储向量数据库文件的目录路径
         self.persist_dir = persist_dir
-        #获取单例 embedding 模型，用于文本向量化
         self.embeddings = get_embedding_model()
-        #如果目录不存在则创建，exist_ok=True 避免目录已存在时报错
         os.makedirs(persist_dir, exist_ok=True)
 
-    def index_documents(self, docs: List[Document], collection_name: str = "default") -> Chroma:
-        """索引文档。"""
-        #创建 Chroma 向量数据库实例
+    def index_documents(
+        self, docs: List[Document], collection_name: str = "default"
+    ) -> Chroma:
+        """索引文档（使用 Chroma 内置逐 batch 编码）。"""
         vectorstore = Chroma.from_documents(
-            #待索引的文档对象列表
             documents=docs,
-            #向量数据持久化存储路径
-            persist_directory=self.persist_dir,
-            #向量化模型
             embedding=self.embeddings,
-            #集合名称
-            collection_name=collection_name
+            persist_directory=self.persist_dir,
+            collection_name=collection_name,
         )
         print(f"✅ 已索引 {len(docs)} 个文档到集合 '{collection_name}'")
+        return vectorstore
+
+    def index_documents_batch(
+        self, docs: List[Document], collection_name: str = "default"
+    ) -> Chroma:
+        """高效批量索引：一次性编码全部文本，再写入 Chroma。
+
+        相比 index_documents（Chroma 内部逐 batch 调用 embed_documents），
+        这个方法让 SentenceTransformer 自己管理 batch 和 GPU 传输，减少
+        Python↔C 跨界开销，适合 100+ chunks 的批量导入。
+        """
+        t0 = time.time()
+        texts = [d.page_content for d in docs]
+        metadatas = [d.metadata for d in docs]
+        ids = [
+            f"{collection_name}_{i}"
+            for i in range(len(docs))
+        ]
+
+        print(f"  🔤 编码 {len(texts)} 条文本...")
+        embeddings = embed_batch(texts)
+        print(f"  ⏱️  编码耗时: {time.time() - t0:.1f}s")
+
+        vectorstore = Chroma(
+            persist_directory=self.persist_dir,
+            embedding_function=self.embeddings,
+            collection_name=collection_name,
+        )
+        vectorstore.add_texts(
+            texts=texts,
+            metadatas=metadatas,
+            ids=ids,
+            embeddings=embeddings,  # 直接传入预计算的向量，跳过 Chroma 再编码
+        )
+        print(f"✅ 批量索引完成: {len(docs)} 条 → 集合 '{collection_name}'，总耗时 {time.time() - t0:.1f}s")
         return vectorstore
 
     def get_retriever(self, collection_name: str = "default", top_k: int = 3, search_type: str = "similarity"):

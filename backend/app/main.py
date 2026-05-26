@@ -2,8 +2,9 @@
 import sys
 from pathlib import Path
 
-# 将 backend 目录加入 sys.path，确保 import config 和 app 模块能找到
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# 将 backend 和项目根目录加入 sys.path，确保 import config 和 app 模块能找到
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))           # backend/
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))    # 项目根目录（config.py 所在地）
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import chat, documents, feedback, knowledge_bases, debug

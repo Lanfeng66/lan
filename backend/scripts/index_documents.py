@@ -41,7 +41,7 @@ def index_all():
     except Exception as e:
         print(f"   ⚠️  删除旧集合失败：{e}")
 
-    vm.index_documents(all_chunks, collection_name="docmind")
+    vm.index_documents_batch(all_chunks, collection_name="docmind")
     print("\n🎉 索引完成！")
 
 if __name__ == "__main__":
