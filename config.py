@@ -42,6 +42,9 @@ CHROMA_PERSIST_DIR = _resolve_path(os.getenv("CHROMA_PERSIST_DIR", "./data/chrom
 
 UPLOAD_DIR = _resolve_path(os.getenv("UPLOAD_DIR", "./data/uploads"))
 
+# ── 知识库文件统一管理目录 ──
+KNOWLEDGE_BASE_DIR = _resolve_path(os.getenv("KNOWLEDGE_BASE_DIR", "./data/knowledge_base"))
+
 # ── 关系型数据库 ──
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/docmind.db")
 

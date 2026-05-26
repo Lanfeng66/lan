@@ -3,5 +3,5 @@ chcp 65001 >nul
 title DocMind-Frontend
 
 cd /d %~dp0frontend
-npm run dev
+npx next build && npx next start -p 3000
 pause

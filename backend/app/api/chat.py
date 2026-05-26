@@ -114,7 +114,13 @@ async def chat_stream(
 
             from langchain_core.messages import SystemMessage, HumanMessage
             messages = [
-                SystemMessage(content=f"""你是技术文档助手。只用以下资料回答问题，不编造。
+                SystemMessage(content=f"""你是技术文档助手。请按以下规则回答：
+
+1. 只使用【参考资料】中明确提供的信息，禁止编造、推测或补充
+2. 用清晰的结构组织答案：先给结论，再分点详述
+3. 涉及步骤、命令、配置时，逐条列出并标注来源
+4. 如果资料不足以回答问题，直接说"当前知识库中没有相关信息"
+5. 回答简洁，不要展开与问题无关的内容
 
 【参考资料】
 {context}"""),

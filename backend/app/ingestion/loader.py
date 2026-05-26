@@ -47,7 +47,7 @@ def _load_markdown(file_path:str)->List[Document]:
 # 加载txt文件
 def _load_text(file_path:str)->List[Document]:
     """加载txt文件。"""
-    loader = TextLoader(file_path)
+    loader = TextLoader(file_path, encoding="utf-8")
     docs = loader.load()
     for doc in docs:
         doc.metadata["source_type"] = "text"
