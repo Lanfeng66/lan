@@ -4,33 +4,20 @@ import re
 from app.llm.chat_model import get_llm
 
 
-
 def extract_claims(answer: str) -> List[str]:
-    """
-    从答案中提取事实性断言。
-    简化策略：按句号/换行拆分，过滤太短的句子。
-    """
+    """从答案中提取事实性断言。按句号/换行拆分，过滤太短的句子。"""
     sentences = re.split(r"[。\n]+", answer)
     claims = []
     for s in sentences:
         s = s.strip()
-        # 过滤：太短的不是断言，包含"我"、"建议"等不是事实
         if len(s) > 10 and not any(w in s for w in ["建议", "可以试试", "可能"]):
             claims.append(s)
     return claims
 
-def check_claim_against_context(claim: str,contexts: List[str],) -> Tuple[bool, str]:
-    """
-    检查单个断言是否被上下文支持。
-    用 LLM 做 NLI（自然语言推理）。
 
-    Returns:
-        (is_supported, explanation)
-        is_supported: True=被支持, False=矛盾或无依据
-        explanation: 简短解释
-    """
+def check_claim_against_context(claim: str, contexts: List[str]) -> Tuple[bool, str]:
+    """检查单个断言是否被上下文支持（保留用于兼容和单条检查）。"""
     llm = get_llm()
-
     context_text = "\n---\n".join(contexts[:5])
 
     prompt = f"""请判断以下【断言】是否能在【参考资料】中找到直接依据。
@@ -49,32 +36,90 @@ def check_claim_against_context(claim: str,contexts: List[str],) -> Tuple[bool, 
 
     response = llm.invoke(prompt)
     label = (response.content if hasattr(response, "content") else str(response)).strip()
-
     is_supported = "支持" in label
     return is_supported, label
 
-def evaluate_answer(question: str,answer: str,contexts: List[str],) -> dict:
+
+def check_claims_batch(
+    claims: List[str],
+    contexts: List[str],
+    llm=None,
+) -> List[Tuple[bool, str]]:
+    """批量检查多条断言：将所有 claims 合并为一个 prompt，一次 LLM 调用完成。"""
+    if not claims:
+        return []
+
+    if llm is None:
+        llm = get_llm()
+
+    context_text = "\n---\n".join(contexts[:5])
+    claims_text = "\n".join(f"断言{i+1}: {claim}" for i, claim in enumerate(claims))
+
+    prompt = f"""请判断以下每条【断言】是否能在【参考资料】中找到直接依据。
+
+【参考资料】:
+{context_text}
+
+【断言列表】:
+{claims_text}
+
+对每条断言，请严格按格式回复（共{len(claims)}行，每行一条）：
+断言N|标签
+
+标签必须是以下三种之一：
+- 支持: 参考资料中明确包含该信息
+- 矛盾: 参考资料中有相反的信息
+- 无依据: 参考资料中未提及该信息
+
+回复："""
+
+    response = llm.invoke(prompt)
+    response_text = response.content if hasattr(response, "content") else str(response)
+
+    # 解析每行 "断言N|标签"
+    results = []
+    for i in range(len(claims)):
+        is_supported = False
+        label = "无依据"
+        pattern = re.compile(rf"断言{i+1}\s*[|：:]\s*(.+)")
+        match = pattern.search(response_text)
+        if match:
+            label = match.group(1).strip()
+        is_supported = "支持" in label
+        results.append((is_supported, label))
+
+    return results
+
+
+def evaluate_answer(question: str, answer: str, contexts: List[str]) -> dict:
     """
     对答案做全面质量评估。
 
     Returns:
         {
-            "hallucination_ratio": float,  # 幻觉断言比例
-            "claim_details": List[dict],    # 每个断言的检测结果
-            "relevance_score": int,         # 1-5
-            "completeness_score": int,      # 1-5
-            "accuracy_score": int,          # 1-5
-            "overall_pass": bool,           # 是否通过质检
+            "hallucination_ratio": float,
+            "claim_details": List[dict],
+            "relevance_score": int,
+            "completeness_score": int,
+            "accuracy_score": int,
+            "overall_pass": bool,
         }
     """
     contexts_text = [c["content"] if isinstance(c, dict) else c for c in contexts]
-    # 1. 提取断言并逐个检查
+
+    # 1. 批量检查所有断言（最多 5 条，一次 LLM 调用）
     claims = extract_claims(answer)
+    claims_to_check = claims[:5]
+
+    if claims_to_check:
+        llm = get_llm()
+        claim_results = check_claims_batch(claims_to_check, contexts_text, llm=llm)
+    else:
+        claim_results = []
+
     claim_details = []
     unsupported_count = 0
-    # 限制检查数量为10个
-    for claim in claims[:10]:
-        is_supported, label = check_claim_against_context(claim, contexts_text)
+    for claim, (is_supported, label) in zip(claims_to_check, claim_results):
         claim_details.append({
             "claim": claim,
             "is_supported": is_supported,
@@ -83,13 +128,10 @@ def evaluate_answer(question: str,answer: str,contexts: List[str],) -> dict:
         if not is_supported:
             unsupported_count += 1
 
-    # 计算幻觉断言比例 （0-1之间）
     hallucination_ratio = unsupported_count / max(len(claim_details), 1)
 
     # 2. LLM 综合评分
-    from app.llm.chat_model import get_llm
     llm = get_llm()
-
     score_prompt = f"""请对以下答案做质量评估，从三个维度打分（1-5）：
 
     问题：{question}
@@ -104,7 +146,6 @@ def evaluate_answer(question: str,answer: str,contexts: List[str],) -> dict:
     response = llm.invoke(score_prompt)
     scores_text = response.content if hasattr(response, "content") else str(response)
 
-    # 解析分数
     relevance = 3
     completeness = 3
     accuracy = 3
@@ -118,9 +159,9 @@ def evaluate_answer(question: str,answer: str,contexts: List[str],) -> dict:
             accuracy = int(m.group(1))
 
     overall_pass = (
-            hallucination_ratio < 0.3  # 幻觉率 < 30%
-            and relevance >= 3
-            and accuracy >= 3
+        hallucination_ratio < 0.3
+        and relevance >= 3
+        and accuracy >= 3
     )
 
     return {

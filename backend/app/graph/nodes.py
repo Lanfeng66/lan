@@ -102,31 +102,42 @@ def rrf_fusion(state: RAGState) -> dict:
     return {"retrieved_docs": fused}
 
 def rerank(state: RAGState) -> dict:
-    """节点5：Cross-encoder 重排序（简化版：用 LLM 打分）。"""
+    """节点5：Cross-encoder 重排序（并行批量 LLM 打分）。"""
     docs = state.get("retrieved_docs", [])
     if len(docs) <= 5:
         return {"final_context": docs}
 
     question = state["question"]
+    candidates = docs[:8]  # RRF 已排好序，8 个候选足够选 Top-5
 
-    # 简化版：让 LLM 对每条结果打分（生产环境用 BGE-Reranker）
+    # 一次性构建所有 prompt，批量并行调用
+    prompts = []
+    for doc in candidates:
+        prompt = (
+            "问题：" + question + "\n"
+            "资料片段：" + doc['content'][:300] + "\n\n"
+            "这条资料对回答问题的有用程度，请打 1-10 分。\n"
+            "只回复数字。"
+        )
+        prompts.append(prompt)
+
+    try:
+        responses = llm.batch(prompts, config={"max_concurrency": 8})
+    except Exception:
+        print("  Batch rerank failed, fallback to top-N")
+        return {"final_context": candidates[:5]}
+
     scored = []
-    for i, doc in enumerate(docs[:15]):  # 最多评估 15 条
-        prompt = f"""问题：「{question}」
-    资料片段：「{doc['content'][:300]}」
-
-    这条资料对回答问题的有用程度，请打 1-10 分。
-    只回复数字。"""
+    for doc, response in zip(candidates, responses):
         try:
-            response = llm.invoke(prompt)
             score = float(response.content.strip()) / 10.0
-        except:
+        except (ValueError, AttributeError):
             score = 0.5
         scored.append((score, doc))
 
     scored.sort(key=lambda x: x[0], reverse=True)
     top5 = [d for _, d in scored[:5]]
-    print(f"  📊 Rerank: {len(scored)} → {len(top5)} 条")
+    print(f"  Rerank: {len(scored)} candidates -> {len(top5)} selected (batch)")
     return {"final_context": top5}
 
 def generate(state: RAGState) -> dict:
